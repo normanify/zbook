@@ -62,3 +62,13 @@ Required SDK:
 *   Compile SDK: 36
 *   Min SDK: 23
 *   Target SDK: 34
+
+### GitHub Actions (Auto-Publish)
+
+To enable automatic release building, configure the following **Secrets** in your GitHub repository settings:
+
+*   `KEYSTORE_FILE`: The base64 encoded content of your `keystore.jks` file.
+    *   Command to generate: `base64 -i path/to/keystore.jks | pbcopy`
+*   `KEYSTORE_PASSWORD`: The password for your keystore.
+*   `KEY_ALIAS`: The alias of the key.
+*   `KEY_PASSWORD`: The password for the key.
