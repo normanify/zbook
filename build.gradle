@@ -1,13 +1,4 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
-signingConfigs {
-        release {
-            storeFile file(System.getenv("KEYSTORE_FILE") ?: "debug.keystore")
-            storePassword System.getenv("KEYSTORE_PASSWORD")
-            keyAlias System.getenv("KEY_ALIAS")
-            keyPassword System.getenv("KEY_PASSWORD")
-        }
-    }
-
 plugins {
     alias(libs.plugins.android.application) apply false
 }
