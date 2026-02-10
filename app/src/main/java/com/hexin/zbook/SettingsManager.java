@@ -18,6 +18,8 @@ public class SettingsManager {
     private static final String KEY_HIDE_ATTACHMENTS_IN_ALL_ITEMS = "hideAttachmentsInAllItems";
     private static final String KEY_SORT_FIELD = "sort_field";
     private static final String KEY_SORT_ORDER = "sort_order";
+    private static final String KEY_WEB_DAV_CERTIFICATE_PATH = "webDavCertificatePath";
+    private static final String KEY_TRUST_ALL_CERTIFICATES = "trustAllCertificates"; // New key for trust all setting
     private final SharedPreferences mPrefs;
 
     private SettingsManager(Context context) {
@@ -113,5 +115,22 @@ public class SettingsManager {
 
     public void setHideAttachmentsInAllItems(boolean hide) {
         mPrefs.edit().putBoolean(KEY_HIDE_ATTACHMENTS_IN_ALL_ITEMS, hide).apply();
+    }
+
+    public String getWebDavCertificatePath() {
+        return mPrefs.getString(KEY_WEB_DAV_CERTIFICATE_PATH, "");
+    }
+
+    public void setWebDavCertificatePath(String path) {
+        mPrefs.edit().putString(KEY_WEB_DAV_CERTIFICATE_PATH, path).apply();
+    }
+
+    // New methods for trusting all certificates
+    public boolean getTrustAllCertificates() {
+        return mPrefs.getBoolean(KEY_TRUST_ALL_CERTIFICATES, true);
+    }
+
+    public void setTrustAllCertificates(boolean trustAll) {
+        mPrefs.edit().putBoolean(KEY_TRUST_ALL_CERTIFICATES, trustAll).apply();
     }
 }

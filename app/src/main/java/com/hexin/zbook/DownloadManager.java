@@ -11,6 +11,10 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +25,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 
 import okhttp3.Credentials;
 import okhttp3.OkHttpClient;
@@ -76,7 +87,9 @@ public class DownloadManager {
 
     private DownloadManager(Context context, ItemDao itemDao) {
         mContext = context.getApplicationContext();
-        mHttpClient = new OkHttpClient();
+        String certPath = SettingsManager.getInstance(context).getWebDavCertificatePath();
+        boolean trustAll = SettingsManager.getInstance(context).getTrustAllCertificates();
+        mHttpClient = getTrustedOkHttpClient(context, certPath, trustAll);
         mSettingsManager = SettingsManager.getInstance(context);
         mItemDao = itemDao;
         mGlobalProgress.postValue(new GlobalDownloadProgress(false, 0, 0));
@@ -310,4 +323,76 @@ public class DownloadManager {
         String effectiveFilename = (filename != null && !filename.isEmpty()) ? filename : itemKey;
         return new File(downloadsDir, effectiveFilename);
     }
+
+    // New helper method to create an OkHttpClient that trusts a custom certificate or all certificates
+
+    private OkHttpClient getTrustedOkHttpClient(Context context, String certPath, boolean trustAll) {
+        OkHttpClient.Builder builder = new OkHttpClient.Builder();
+
+        // 1. 解决核心问题：强制使用 IPv4 避免 IPv6 握手超时
+//        builder.dns(hostname -> {
+//            try {
+//                List<java.net.InetAddress> addresses = okhttp3.Dns.SYSTEM.lookup(hostname);
+//                List<java.net.InetAddress> ipv4Addresses = new java.util.ArrayList<>();
+//                for (java.net.InetAddress addr : addresses) {
+//                    if (addr instanceof java.net.Inet4Address) {
+//                        ipv4Addresses.add(addr);
+//                    }
+//                }
+//                // 如果解析出了 IPv4 则只返回 IPv4，否则返回原始列表
+//                return ipv4Addresses.isEmpty() ? addresses : ipv4Addresses;
+//            } catch (Exception e) {
+//                return okhttp3.Dns.SYSTEM.lookup(hostname);
+//            }
+//        });
+
+        // 2. 增加超时时间：给握手留出更多缓冲空间
+        builder.connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
+
+        // 3. 原有的 SSL 证书配置逻辑
+        if (trustAll) {
+            Log.w(TAG, "Trusting all certificates...");
+            try {
+                final TrustManager[] trustAllCerts = new TrustManager[]{
+                        new X509TrustManager() {
+                            @Override
+                            public void checkClientTrusted(X509Certificate[] chain, String authType) {}
+                            @Override
+                            public void checkServerTrusted(X509Certificate[] chain, String authType) {}
+                            @Override
+                            public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                        }
+                };
+                final SSLContext sslContext = SSLContext.getInstance("SSL");
+                sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+                builder.sslSocketFactory(sslContext.getSocketFactory(), (X509TrustManager) trustAllCerts[0]);
+                builder.hostnameVerifier((hostname, session) -> true);
+            } catch (Exception e) {
+                Log.e(TAG, "Error configuring trustAll", e);
+            }
+        } else if (certPath != null && !certPath.isEmpty()) {
+            try {
+                InputStream caInput = new FileInputStream(certPath);
+                CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+                Certificate ca = certificateFactory.generateCertificate(caInput);
+                KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+                keyStore.load(null, null);
+                keyStore.setCertificateEntry("ca", ca);
+                TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+                tmf.init(keyStore);
+                SSLContext sslContext = SSLContext.getInstance("TLS");
+                sslContext.init(null, tmf.getTrustManagers(), null);
+                builder.sslSocketFactory(sslContext.getSocketFactory(), (X509TrustManager) tmf.getTrustManagers()[0]);
+            } catch (Exception e) {
+                Log.e(TAG, "Error configuring custom cert", e);
+            }
+        }
+
+        return builder.build();
+    }
+
+
+
 }

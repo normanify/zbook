@@ -11,6 +11,9 @@ import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.Credentials;
@@ -73,7 +76,35 @@ public class SettingsViewModel extends AndroidViewModel {
         }
 
         mIsTesting.setValue(true);
-        OkHttpClient client = new OkHttpClient();
+
+        // --- 修改开始：构建一个跳过 SSL 校验的 OkHttpClient ---
+        OkHttpClient client;
+        try {
+            final TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                        @Override
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {}
+                        @Override
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() { return new java.security.cert.X509Certificate[0]; }
+                    }
+            };
+
+            javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+
+            client = new OkHttpClient.Builder()
+                    .sslSocketFactory(sslContext.getSocketFactory(), (X509TrustManager) trustAllCerts[0])
+                    .hostnameVerifier((hostname, session) -> true) // 解决域名不匹配问题
+                    .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS) // 解决之前遇到的超时问题
+                    .build();
+        } catch (Exception e) {
+            // 如果配置失败，回退到默认（通常不会失败）
+            client = new OkHttpClient();
+        }
+        // --- 修改结束 ---
+
         Request.Builder requestBuilder = new Request.Builder()
                 .url(url)
                 .method("PROPFIND", RequestBody.create(null, new byte[0]));
@@ -91,7 +122,7 @@ public class SettingsViewModel extends AndroidViewModel {
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) {
-                if (response.isSuccessful() || response.code() == 207) { // 207 Multi-Status is a success for PROPFIND
+                if (response.isSuccessful() || response.code() == 207) {
                     mTestResult.postValue(new Event<>("WebDAV connection successful!"));
                 } else {
                     mTestResult.postValue(new Event<>("WebDAV connection failed: " + response.code() + " " + response.message()));
